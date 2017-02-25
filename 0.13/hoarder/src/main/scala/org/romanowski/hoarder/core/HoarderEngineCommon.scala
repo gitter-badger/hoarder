@@ -8,9 +8,9 @@ package org.romanowski.hoarder.core
 
 import java.nio.charset.Charset
 
-import sbt._
+import sbt.{PathFinder, _}
 import sbt.Keys._
-import java.nio.file.{Path, Paths}
+import java.nio.file.{Files, Path, Paths}
 
 import org.romanowski.HoarderCommonSettings._
 
@@ -28,10 +28,14 @@ trait HoarderEngineCommon {
                         analysisFile: File,
                         relativeCacheLocation: Path,
                         overrideExistingCache: Boolean,
-                        cleanOutputMode: CleanOutputMode
+                        cleanOutputMode: CleanOutputMode,
+                        configuration: Configuration
                        )
 
-  protected def exportCacheTaskImpl(setup: CacheSetup, result: CompilationResult, globalCacheLocation: Path): Unit
+  protected def exportCacheTaskImpl(setup: CacheSetup,
+                                    result: CompilationResult,
+                                    globalCacheLocation: Path,
+                                    zipClasses: Boolean = true): Path
 
   protected def importCacheTaskImpl(cacheSetup: CacheSetup, globalCacheLocation: Path): Option[PreviousCompilationResult]
 
@@ -44,7 +48,37 @@ trait HoarderEngineCommon {
         analysisFile = (streams in compileIncSetup).value.cacheDirectory / compileAnalysisFilename.value,
         relativeCacheLocation = Paths.get(name.value).resolve(configuration.value.name),
         overrideExistingCache = overrideExistingCache.value,
-        cleanOutputMode = cleanOutputMode.value
+        cleanOutputMode = cleanOutputMode.value,
+        configuration = configuration.value
       )
     }
+
+  protected def cleanOutput(outputDir: File, cleanOutputMode: CleanOutputMode) = {
+    if (outputDir.exists()) {
+      if (outputDir.isDirectory) {
+        cleanOutputMode match {
+          case CleanOutput =>
+            if (outputDir.list().nonEmpty) IO.delete(outputDir)
+          case FailOnNonEmpty =>
+            if (outputDir.list().nonEmpty)
+              throw new IllegalStateException(s"Output directory: $outputDir is not empty and cleanOutput is false")
+          case CleanClasses =>
+            val classFiles = PathFinder(outputDir) ** "*.class"
+            IO.delete(classFiles.get)
+        }
+      } else throw new IllegalStateException(s"Output file: $outputDir is not a directory")
+    }
+  }
+
+  protected def extractBinaries(cacheLocation: Path, cacheSetup: CacheSetup): Set[File] = {
+    import cacheSetup._
+
+    val classesZip = cacheLocation.resolve(classesZipFileName)
+    val outputDir = classesRoot.toFile
+
+      if (Files.exists(classesZip)) {
+        cleanOutput(outputDir, cleanOutputMode)
+      IO.unzip(classesZip.toFile, outputDir, preserveLastModified = true)
+    } else Set.empty
+  }
 }

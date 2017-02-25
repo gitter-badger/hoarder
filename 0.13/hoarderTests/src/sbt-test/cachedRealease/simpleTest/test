@@ -1,0 +1,10 @@
+> "set version := 1234.toString"
+> publish
+$ touch .cached-compilation
+-> "loadRelease non-exisitng"
+> "loadRelease 1234"
+$ touch .cached-compilation-done
+> testCacheImport
+> clean
+> "set org.romanowski.hoarder.actions.CachedRelease.failOnMissing := false"
+> loadRelease non-exisitng

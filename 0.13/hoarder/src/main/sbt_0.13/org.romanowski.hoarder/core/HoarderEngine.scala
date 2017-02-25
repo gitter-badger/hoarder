@@ -25,12 +25,14 @@ class HoarderEngine extends HoarderEngineCommon {
 
   protected override def exportCacheTaskImpl(setup: CacheSetup,
                                              result: CompilationResult,
-                                             globalCacheLocation: Path): Unit = {
+                                             globalCacheLocation: Path,
+                                             zipClasses: Boolean = true
+                                            ): Path = {
     import setup._
     val cacheLocation = globalCacheLocation.resolve(relativeCacheLocation)
 
     if (Files.exists(cacheLocation)) {
-      if(overrideExistingCache) IO.delete(cacheLocation.toFile)
+      if (overrideExistingCache) IO.delete(cacheLocation.toFile)
       else new IllegalArgumentException(s"Cache already exists at $cacheLocation.")
     }
 
@@ -44,13 +46,16 @@ class HoarderEngine extends HoarderEngineCommon {
 
     val outputPath = ouputForProject(result.setup).toPath
 
-    val classes = (PathFinder(classesRoot.toFile) ** "*.class").get
-    val classesToZip = classes.map { classFile =>
-      val mapping = outputPath.relativize(classFile.toPath).toString
-      classFile -> mapping
-    }
+    if (zipClasses) {
+      val classes = (PathFinder(classesRoot.toFile) ** "*.class").get
+      val classesToZip = classes.map { classFile =>
+        val mapping = outputPath.relativize(classFile.toPath).toString
+        classFile -> mapping
+      }
 
-    IO.zip(classesToZip, cacheLocation.resolve(classesZipFileName).toFile)
+      IO.zip(classesToZip, cacheLocation.resolve(classesZipFileName).toFile)
+    }
+    cacheLocation
   }
 
   protected override def importCacheTaskImpl(cacheSetup: CacheSetup,
@@ -59,29 +64,9 @@ class HoarderEngine extends HoarderEngineCommon {
     val cacheLocation = globalCacheLocation.resolve(relativeCacheLocation)
 
     val from = cacheLocation.resolve(analysisCacheFileName)
-    val classesZip = cacheLocation.resolve(classesZipFileName)
     val mapper = createMapper(cacheSetup)
-    val outputDir = classesRoot.toFile
 
-    if (Files.exists(from) && Files.exists(classesZip)) {
-
-      if (outputDir.exists()) {
-        if (outputDir.isDirectory) {
-          cleanOutputMode match {
-            case CleanOutput =>
-              if (outputDir.list().nonEmpty) IO.delete(outputDir)
-            case FailOnNonEmpty =>
-              if (outputDir.list().nonEmpty)
-                throw new IllegalStateException(s"Output directory: $outputDir is not empty and cleanOutput is false")
-            case CleanClasses =>
-              val classFiles = PathFinder(outputDir) ** "*.class"
-              IO.delete(classFiles.get)
-          }
-        } else throw new IllegalStateException(s"Output file: $outputDir is not a directory")
-      }
-
-      IO.unzip(classesZip.toFile, outputDir, preserveLastModified = true)
-
+    if (Files.exists(from) && extractBinaries(cacheLocation, cacheSetup).nonEmpty) {
       val ios = Files.newBufferedReader(from, Charset.forName("UTF-8"))
 
       val (analysis, setup) = try {

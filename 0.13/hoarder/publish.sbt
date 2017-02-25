@@ -6,6 +6,7 @@ publishTo := {
     Some("snapshots" at nexus + "content/repositories/snapshots")
   else
     Some("releases"  at nexus + "service/local/staging/deploy/maven2")
+  Some(Resolver.file("ala", new File("/home/krzysiek/my-local-repo")))
 }
 
 pomIncludeRepository := { _ => false }
